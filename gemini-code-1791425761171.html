@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WAR INTEL OPS // TARGET: MANA</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- FontAwesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Rajdhani:wght@500;600;700;800&display=swap');
+    
+    :root {
+      --bg-dark: #070b12;
+      --card-bg: rgba(13, 20, 36, 0.92);
+      --border-neon: rgba(0, 242, 254, 0.22);
+      --cyan-glow: #00f2fe;
+      --crimson-glow: #ff0055;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      font-family: 'Rajdhani', sans-serif;
+      color: #e2e8f0;
+      background-image: 
+        radial-gradient(circle at 12% 15%, rgba(0, 242, 254, 0.05) 0%, transparent 40%),
+        radial-gradient(circle at 88% 85%, rgba(255, 0, 85, 0.05) 0%, transparent 40%),
+        linear-gradient(rgba(7, 11, 18, 0.97), rgba(7, 11, 18, 0.97)),
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0, 242, 254, 0.015) 2px, rgba(0, 242, 254, 0.015) 4px);
+    }
+
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    
+    .tactical-border {
+      border: 1px solid var(--border-neon);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 4px 24px -2px rgba(0, 0, 0, 0.6);
+    }
+
+    .radar-sweep {
+      position: relative;
+      overflow: hidden;
+    }
+    .radar-sweep::after {
+      content: "";
+      position: absolute;
+      top: -50%; left: -50%; width: 200%; height: 200%;
+      background: linear-gradient(to right, transparent, rgba(0, 242, 254, 0.06), transparent);
+      transform: rotate(30deg);
+      animation: sweep 7s infinite linear;
+      pointer-events: none;
+    }
+
+    @keyframes sweep {
+      0% { transform: translateY(-100%) rotate(30deg); }
+      100% { transform: translateY(100%) rotate(30deg); }
+    }
+
+    /* Heatmap grid cells */
+    .heat-cell {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      transition: transform 0.15s ease, filter 0.15s ease;
+    }
+    .heat-cell:hover {
+      transform: scale(1.4);
+      z-index: 20;
+      filter: brightness(1.3);
+    }
+    .cell-on { background-color: #10b981; }
+    .cell-off { background-color: #1e293b; border: 1px solid rgba(255, 255, 255, 0.05); }
+    .cell-idl { background-color: #f59e0b; }
+    .cell-dash { background-color: #334155; opacity: 0.35; }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #080d17; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #00f2fe; }
+  </style>
+</head>
+<body class="min-h-screen p-3 md:p-6 lg:p-8">
+
+  <!-- TOP HEADER / TELEMETRY -->
+  <header class="tactical-border radar-sweep bg-slate-900/90 rounded-2xl p-5 mb-6">
+    <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div class="flex items-center gap-4">
+        <div class="w-14 h-14 rounded-xl bg-cyan-500/10 border border-cyan-400 flex items-center justify-center text-cyan-400 text-2xl shadow-lg shadow-cyan-500/20">
+          <i class="fa-solid fa-crosshairs animate-pulse"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="px-2 py-0.5 rounded text-[11px] font-bold tracking-widest bg-red-500/20 text-red-400 border border-red-500/30 uppercase mono">Hostile Faction Intel</span>
+            <span class="px-2 py-0.5 rounded text-[11px] font-bold tracking-widest bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 mono">56 Operatives Tracked</span>
+            <span class="px-2 py-0.5 rounded text-[11px] font-bold tracking-widest bg-amber-500/20 text-amber-400 border border-amber-500/30 mono">30-Day Activity Heatmap</span>
+          </div>
+          <h1 class="text-3xl md:text-4xl font-black tracking-wider text-white mt-1">
+            WAR INTEL: <span class="text-cyan-400 drop-shadow-[0_0_12px_rgba(0,242,254,0.6)]">MANA</span>
+          </h1>
+        </div>
+      </div>
+
+      <!-- Live telemetry clocks and actions -->
+      <div class="flex flex-wrap items-center gap-3 mono text-xs">
+        <div class="bg-slate-950/80 border border-slate-800 rounded-lg px-3.5 py-2">
+          <div class="text-[10px] text-slate-400 uppercase">Torn City Time (TCT)</div>
+          <div id="tctClock" class="text-sm font-bold text-yellow-400">--:--:-- TCT</div>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800 rounded-lg px-3.5 py-2">
+          <div class="text-[10px] text-slate-400 uppercase">Singapore Time (SGT: TCT+8)</div>
+          <div id="sgtClock" class="text-sm font-bold text-cyan-400">--:--:-- SGT</div>
+        </div>
+        <button onclick="toggleTimeZone()" class="px-4 py-2.5 bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-300 border border-cyan-500/50 rounded-lg font-bold mono transition flex items-center gap-2 shadow-sm shadow-cyan-500/20">
+          <i class="fa-solid fa-clock-rotate-left"></i>
+          <span>Mode: <strong id="timeModeBadge" class="text-white">SGT (TCT+8)</strong></span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- FACTION STRATEGIC METRICS -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+    <div class="tactical-border bg-slate-900/80 rounded-xl p-4 border-l-4 border-l-cyan-400">
+      <div class="flex justify-between items-start">
+        <div>
+          <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Top Faction Titan</p>
+          <h3 class="text-2xl font-bold text-white mt-1">Rob442 <span class="text-cyan-400 font-mono text-lg font-bold">(10.66 B)</span></h3>
+        </div>
+        <div class="p-2 bg-cyan-400/10 rounded-lg text-cyan-400"><i class="fa-solid fa-crown text-lg"></i></div>
+      </div>
+      <p class="text-xs text-slate-400 mt-2 mono">Apex 4 Titans hold over <span class="text-white font-bold">35.8 Billion</span> Battle Stats</p>
+    </div>
+
+    <div class="tactical-border bg-slate-900/80 rounded-xl p-4 border-l-4 border-l-emerald-400">
+      <div class="flex justify-between items-start">
+        <div>
+          <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Faction Active Presence</p>
+          <h3 class="text-2xl font-bold text-emerald-400 mt-1">44.3% <span class="text-xs font-normal text-slate-400">(50.3% w/ Idle)</span></h3>
+        </div>
+        <div class="p-2 bg-emerald-400/10 rounded-lg text-emerald-400"><i class="fa-solid fa-gauge-high text-lg"></i></div>
+      </div>
+      <p class="text-xs text-slate-400 mt-2 mono">39,869 tracked hrs analyzed across 31 days</p>
+    </div>
+
+    <div class="tactical-border bg-slate-900/80 rounded-xl p-4 border-l-4 border-l-red-500">
+      <div class="flex justify-between items-start">
+        <div>
+          <p class="text-xs font-bold text-red-400 uppercase tracking-wider">Optimal Raid Window</p>
+          <h3 class="text-2xl font-bold text-white mt-1" id="raidWindowHeader">15:00 - 19:00 SGT</h3>
+        </div>
+        <div class="p-2 bg-red-500/10 rounded-lg text-red-400"><i class="fa-solid fa-skull-crossbones text-lg animate-bounce"></i></div>
+      </div>
+      <p class="text-xs text-red-300/80 mt-2 mono" id="raidWindowSub">TCT 07:00 - 11:00 · Opponent drops to 40.5% presence</p>
+    </div>
+
+    <div class="tactical-border bg-slate-900/80 rounded-xl p-4 border-l-4 border-l-amber-400">
+      <div class="flex justify-between items-start">
+        <div>
+          <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Opponent Peak Guard</p>
+          <h3 class="text-2xl font-bold text-white mt-1" id="guardWindowHeader">05:00 - 09:00 SGT</h3>
+        </div>
+        <div class="p-2 bg-amber-400/10 rounded-lg text-amber-400"><i class="fa-solid fa-shield-halved text-lg"></i></div>
+      </div>
+      <p class="text-xs text-amber-300/80 mt-2 mono" id="guardWindowSub">TCT 21:00 - 01:00 · Hostile presence surges to 48.5% - 49.2%</p>
+    </div>
+  </div>
+
+  <!-- FACTION 24-HOUR RADAR & QUICK OPERATIVE SELECTOR -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+    <!-- Diurnal Faction Chart (2 cols) -->
+    <div class="tactical-border bg-slate-900/85 rounded-xl p-5 lg:col-span-2">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+        <div>
+          <h3 class="text-lg font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-chart-line text-cyan-400"></i> Faction 24-Hour Diurnal Cycle (% Active)
+          </h3>
+          <p class="text-xs text-slate-400 mono">Visualizing whole faction presence across all 24 hours of the day</p>
+        </div>
+        <div class="flex items-center gap-3 text-xs mono">
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 bg-cyan-400 rounded-sm"></span> Normal</span>
+          <span class="flex items-center gap-1.5"><span class="w-3 h-3 bg-red-500 rounded-sm"></span> Sleep Window (<41%)</span>
+        </div>
+      </div>
+      <div class="h-64">
+        <canvas id="diurnalChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Quick Operative Deep-Dive Launcher -->
+    <div class="tactical-border bg-slate-900/85 rounded-xl p-5 flex flex-col justify-between">
+      <div>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-lg font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-magnifying-glass-location text-cyan-400"></i> Individual Zoom
+          </h3>
+          <span class="text-xs font-mono px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">Single Target</span>
+        </div>
+        <p class="text-xs text-slate-400 mb-4 mono">Select an operative below or click any row in the roster to open full 31-day activity logs & sleep pattern.</p>
+
+        <label class="text-xs text-slate-300 font-bold uppercase mono mb-1 block">Jump To Operative:</label>
+        <select id="quickSelectMember" onchange="openMemberModal(this.value)" class="w-full bg-slate-950 border border-slate-700 text-slate-200 rounded-lg p-2.5 text-xs font-mono focus:border-cyan-400 focus:outline-none mb-4">
+          <!-- Populated by JS -->
+        </select>
+
+        <div class="space-y-2 bg-slate-950/60 p-3.5 rounded-lg border border-slate-800 text-xs mono">
+          <div class="flex justify-between">
+            <span class="text-slate-400">Top Offline Titan:</span>
+            <span class="text-red-400 font-bold cursor-pointer hover:underline" onclick="openMemberModal('mozzy134')">mozzy134 (4.68B - 26.5% ON)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Top Active Titan:</span>
+            <span class="text-emerald-400 font-bold cursor-pointer hover:underline" onclick="openMemberModal('ShizzNZ')">ShizzNZ (8.99B - 70.8% ON)</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-slate-400">Top Idle Titan:</span>
+            <span class="text-amber-400 font-bold cursor-pointer hover:underline" onclick="openMemberModal('Killerworm')">Killerworm (8.30B - 187h Idle)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 pt-3 border-t border-slate-800 text-center">
+        <p class="text-[11px] text-slate-500 mono">Tip: Click on any member row in the table below to zoom down immediately.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPLETE FACTION ROSTER & FILTERABLE TABLE -->
+  <section class="tactical-border bg-slate-900/90 rounded-2xl p-5 mb-8">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-5">
+      <div>
+        <h3 class="text-2xl font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-users-viewfinder text-cyan-400"></i> Opponent Tactical Dossier
+        </h3>
+        <p class="text-xs text-slate-400 mono">Click on any operative to launch full individual sleep cycle & month-long calendar heatmap</p>
+      </div>
+
+      <!-- Filters -->
+      <div class="flex flex-wrap items-center gap-2.5">
+        <!-- Search -->
+        <div class="relative">
+          <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+          <input type="text" id="memberSearch" placeholder="Search operative callsign..." 
+                 class="bg-slate-950/80 border border-slate-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-400 mono w-48 sm:w-56"
+                 onkeyup="applyFilters()" />
+        </div>
+
+        <!-- Rating Filter -->
+        <select id="ratingFilter" onchange="applyFilters()" class="bg-slate-950/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-400 mono">
+          <option value="ALL">All Activity Ratings</option>
+          <option value="High">High Activity (>50%)</option>
+          <option value="Medium">Medium Activity (30-50%)</option>
+          <option value="Low">Low Activity (<30%)</option>
+        </select>
+
+        <!-- BS Tier Filter -->
+        <select id="bsFilter" onchange="applyFilters()" class="bg-slate-950/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-cyan-400 mono">
+          <option value="ALL">All Stat Tiers</option>
+          <option value="TITAN">Super Titans (>5B)</option>
+          <option value="HIGH">Titans (1B - 5B)</option>
+          <option value="MID">Elites (100M - 1B)</option>
+          <option value="LOW">Grunts (<100M)</option>
+        </select>
+
+        <!-- Sort By -->
+        <select id="sortBy" onchange="applyFilters()" class="bg-slate-950/80 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-cyan-300 focus:outline-none focus:border-cyan-400 mono font-bold">
+          <option value="BS_DESC">Sort: Battle Stats (High to Low)</option>
+          <option value="BS_ASC">Sort: Battle Stats (Low to High)</option>
+          <option value="ACT_DESC">Sort: Active % (High to Low)</option>
+          <option value="ACT_ASC">Sort: Active % (Low to High)</option>
+          <option value="NAME_ASC">Sort: Name (A-Z)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div class="overflow-x-auto rounded-xl border border-slate-800">
+      <table class="w-full text-left text-xs">
+        <thead class="bg-slate-950/90 text-slate-400 uppercase font-bold mono border-b border-slate-800">
+          <tr>
+            <th class="py-3 px-3">#</th>
+            <th class="py-3 px-3">Operative</th>
+            <th class="py-3 px-3">Est. Battle Stats</th>
+            <th class="py-3 px-3">Rating</th>
+            <th class="py-3 px-3">Active %</th>
+            <th class="py-3 px-3">Online %</th>
+            <th class="py-3 px-3">Peak Hour</th>
+            <th class="py-3 px-3">Deep Sleep Window</th>
+            <th class="py-3 px-3 text-center">Action</th>
+          </tr>
+        </thead>
+        <tbody id="memberTableBody" class="divide-y divide-slate-800/60 mono text-slate-300">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- INDIVIDUAL OPERATIVE DRILL-DOWN MODAL -->
+  <div id="memberModal" class="fixed inset-0 bg-black/80 backdrop-blur-md z-50 hidden flex items-center justify-center p-3 md:p-6 overflow-y-auto">
+    <div class="bg-slate-900 border border-cyan-400/50 rounded-2xl max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl shadow-cyan-500/20 p-5 md:p-7 relative">
+      
+      <!-- Close button -->
+      <button onclick="closeMemberModal()" class="absolute top-5 right-5 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 w-9 h-9 rounded-full flex items-center justify-center transition">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <!-- Modal Top Bar -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-800 pr-12">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-xl bg-cyan-500/20 border border-cyan-400 flex items-center justify-center text-cyan-400 text-xl font-bold mono">
+            <i class="fa-solid fa-user-ninja"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span id="modalRank" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700">RANK #1</span>
+              <span id="modalRatingBadge" class="text-xs font-mono font-bold px-2 py-0.5 rounded">HIGH</span>
+            </div>
+            <h2 id="modalName" class="text-3xl font-extrabold text-white tracking-wide mt-0.5">Operative Name</h2>
+          </div>
+        </div>
+
+        <!-- Next / Prev navigation -->
+        <div class="flex items-center gap-2 mono text-xs">
+          <button onclick="navigateModal(-1)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition">
+            <i class="fa-solid fa-chevron-left mr-1"></i> Prev Target
+          </button>
+          <button onclick="navigateModal(1)" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded border border-slate-700 transition">
+            Next Target <i class="fa-solid fa-chevron-right ml-1"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Metrics Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 my-5">
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+          <p class="text-[11px] text-slate-400 uppercase mono">Battle Stats</p>
+          <h4 id="modalBs" class="text-xl font-extrabold text-cyan-400 mono mt-0.5">--</h4>
+          <p id="modalRawBs" class="text-[10px] text-slate-500 mono mt-1">-- raw</p>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+          <p class="text-[11px] text-slate-400 uppercase mono">Active Rate</p>
+          <h4 id="modalActPct" class="text-xl font-extrabold text-emerald-400 mono mt-0.5">--%</h4>
+          <p id="modalOnlinePct" class="text-[10px] text-slate-400 mono mt-1">Online: --%</p>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+          <p class="text-[11px] text-slate-400 uppercase mono">Peak Activity Hour</p>
+          <h4 id="modalPeakHour" class="text-xl font-extrabold text-amber-400 mono mt-0.5">--:00</h4>
+          <p class="text-[10px] text-slate-400 mono mt-1" id="modalPeakHourSub">Dangerous to hit</p>
+        </div>
+        <div class="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+          <p class="text-[11px] text-slate-400 uppercase mono">Deep Sleep Window</p>
+          <h4 id="modalSleepWindow" class="text-xl font-extrabold text-red-400 mono mt-0.5">--</h4>
+          <p id="modalSleepConfidence" class="text-[10px] text-red-300/80 mono mt-1">--% active lull</p>
+        </div>
+      </div>
+
+      <!-- Tactical Header String -->
+      <div class="bg-slate-950/90 border border-slate-800 rounded-xl p-3.5 mb-5 flex items-center justify-between text-xs mono">
+        <div>
+          <span class="text-slate-400 font-bold uppercase mr-2"><i class="fa-solid fa-file-waveform text-cyan-400 mr-1"></i> Tracked Logs:</span>
+          <span id="modalTrackedSummary" class="text-slate-300">720 tracked hrs (310 ON / 0 Idle / 410 Off)</span>
+        </div>
+        <div id="modalWarDayInfo" class="text-yellow-400 text-[11px] hidden sm:block">
+          War-Day Activity: ~24h 54m
+        </div>
+      </div>
+
+      <!-- Individual 24-Hour Diurnal Profile -->
+      <div class="tactical-border bg-slate-950/90 rounded-xl p-4 mb-6">
+        <div class="flex justify-between items-center mb-3">
+          <h4 class="text-sm font-bold text-white uppercase mono flex items-center gap-2">
+            <i class="fa-solid fa-chart-area text-cyan-400"></i> 24-Hour Diurnal Curve (Operative vs Faction Baseline)
+          </h4>
+          <span class="text-xs text-slate-400 mono" id="modalCurveTimezoneLabel">Values shown in SGT</span>
+        </div>
+        <div class="h-48">
+          <canvas id="memberHourlyChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Individual 31-Day Calendar Heatmap -->
+      <div class="tactical-border bg-slate-950/90 rounded-xl p-4">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+          <div>
+            <h4 class="text-sm font-bold text-white uppercase mono flex items-center gap-2">
+              <i class="fa-solid fa-calendar-days text-cyan-400"></i> Full 31-Day Activity Heatmap Matrix
+            </h4>
+            <p class="text-[11px] text-slate-400 mono">Every hour logged from 09-06 through 10-06. Hover over blocks to inspect individual hour logs.</p>
+          </div>
+          <!-- Legend -->
+          <div class="flex items-center gap-3 text-[11px] mono">
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 cell-on rounded-sm"></span> ON</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 cell-idl rounded-sm"></span> Idle</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 cell-off rounded-sm"></span> Off</span>
+            <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 cell-dash rounded-sm"></span> Untracked</span>
+          </div>
+        </div>
+
+        <!-- Heatmap Container -->
+        <div class="overflow-x-auto pb-2">
+          <div id="modalHeatmapMatrix" class="min-w-[680px]">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- EMBEDDED DATASET & CLIENT LOGIC -->
+  <script>
+    // Faction members dataset extracted from Faction Wars (Mana)_HeatMap.xlsx
+    const membersData = [
+      { name: "Rob442", bs: "10.66 B", rawBs: 10659519104, tracked: 720, on: 310, idle: 0, off: 410, actPct: 43.1, onPct: 43.1, peakSGT: 19, peakTCT: 11, sleepSgtStart: 0, sleepSgtEnd: 4, sleepTctStart: 16, sleepTctEnd: 20, sleepAvg: 14.2, rating: "Medium", warTotal: "302h 13m", warDay: "24h 54m (1494min)", hourlySGT: [6.7, 10.0, 20.0, 20.0, 33.3, 60.0, 66.7, 60.0, 43.3, 76.7, 36.7, 33.3, 66.7, 36.7, 33.3, 73.3, 33.3, 33.3, 66.7, 80.0, 60.0, 46.7, 20.0, 16.7] },
+      { name: "ShizzNZ", bs: "8.99 B", rawBs: 8990000000, tracked: 720, on: 510, idle: 7, off: 203, actPct: 70.8, onPct: 71.8, peakSGT: 14, peakTCT: 6, sleepSgtStart: 9, sleepSgtEnd: 13, sleepTctStart: 1, sleepTctEnd: 5, sleepAvg: 47.5, rating: "High", warTotal: "302h 13m", warDay: "93h 51m (5631min)", hourlySGT: [83.3, 80.0, 76.7, 80.0, 83.3, 86.7, 86.7, 90.0, 83.3, 50.0, 43.3, 40.0, 56.7, 73.3, 93.3, 90.0, 86.7, 83.3, 80.0, 80.0, 76.7, 76.7, 80.0, 80.0] },
+      { name: "Killerworm", bs: "8.30 B", rawBs: 8300000000, tracked: 720, on: 324, idle: 187, off: 209, actPct: 45.0, onPct: 71.0, peakSGT: 12, peakTCT: 4, sleepSgtStart: 0, sleepSgtEnd: 4, sleepTctStart: 16, sleepTctEnd: 20, sleepAvg: 11.7, rating: "Medium", warTotal: "302h 13m", warDay: "31h 58m", hourlySGT: [6.7, 6.7, 13.3, 20.0, 36.7, 50.0, 60.0, 63.3, 70.0, 66.7, 60.0, 70.0, 73.3, 66.7, 63.3, 60.0, 53.3, 50.0, 46.7, 43.3, 36.7, 30.0, 20.0, 13.3] },
+      { name: "Shull", bs: "7.90 B", rawBs: 7900000000, tracked: 720, on: 465, idle: 5, off: 250, actPct: 64.6, onPct: 65.3, peakSGT: 0, peakTCT: 16, sleepSgtStart: 14, sleepSgtEnd: 18, sleepTctStart: 6, sleepTctEnd: 10, sleepAvg: 30.0, rating: "High", warTotal: "302h 13m", warDay: "78h 51m", hourlySGT: [96.7, 83.3, 86.7, 93.3, 93.3, 90.0, 86.7, 83.3, 76.7, 66.7, 53.3, 40.0, 36.7, 33.3, 26.7, 30.0, 30.0, 33.3, 46.7, 63.3, 76.7, 86.7, 90.0, 93.3] },
+      { name: "mozzy134", bs: "4.68 B", rawBs: 4680000000, tracked: 720, on: 191, idle: 3, off: 526, actPct: 26.5, onPct: 26.9, peakSGT: 6, peakTCT: 22, sleepSgtStart: 12, sleepSgtEnd: 16, sleepTctStart: 4, sleepTctEnd: 8, sleepAvg: 2.5, rating: "Low", warTotal: "302h 13m", warDay: "7h 08m", hourlySGT: [0.0, 0.0, 3.3, 0.0, 3.3, 36.7, 66.7, 60.0, 56.7, 50.0, 36.7, 10.0, 3.3, 0.0, 3.3, 3.3, 6.7, 13.3, 23.3, 33.3, 40.0, 50.0, 46.7, 23.3] },
+      { name: "Victory239", bs: "4.41 B", rawBs: 4410000000, tracked: 720, on: 285, idle: 22, off: 413, actPct: 39.6, onPct: 42.6, peakSGT: 8, peakTCT: 0, sleepSgtStart: 16, sleepSgtEnd: 20, sleepTctStart: 8, sleepTctEnd: 12, sleepAvg: 10.8, rating: "Medium", warTotal: "302h 13m", warDay: "21h 14m", hourlySGT: [50.0, 53.3, 56.7, 53.3, 60.0, 66.7, 63.3, 70.0, 73.3, 66.7, 50.0, 36.7, 26.7, 20.0, 16.7, 13.3, 10.0, 10.0, 10.0, 13.3, 23.3, 33.3, 40.0, 46.7] },
+      { name: "Stevaria", bs: "3.40 B", rawBs: 3400000000, tracked: 720, on: 390, idle: 12, off: 318, actPct: 54.2, onPct: 55.8, peakSGT: 18, peakTCT: 10, sleepSgtStart: 2, sleepSgtEnd: 6, sleepTctStart: 18, sleepTctEnd: 22, sleepAvg: 18.3, rating: "High", warTotal: "302h 13m", warDay: "44h 20m", hourlySGT: [43.3, 30.0, 20.0, 16.7, 16.7, 20.0, 36.7, 50.0, 60.0, 66.7, 70.0, 73.3, 76.7, 80.0, 83.3, 86.7, 86.7, 86.7, 90.0, 83.3, 76.7, 66.7, 56.7, 50.0] },
+      { name: "Cr33p-740", bs: "2.95 B", rawBs: 2950000000, tracked: 720, on: 342, idle: 15, off: 363, actPct: 47.5, onPct: 49.6, peakSGT: 4, peakTCT: 20, sleepSgtStart: 14, sleepSgtEnd: 18, sleepTctStart: 6, sleepTctEnd: 10, sleepAvg: 15.0, rating: "Medium", warTotal: "302h 13m", warDay: "29h 15m", hourlySGT: [66.7, 70.0, 73.3, 76.7, 80.0, 76.7, 70.0, 63.3, 56.7, 46.7, 36.7, 30.0, 23.3, 16.7, 13.3, 13.3, 16.7, 16.7, 26.7, 40.0, 50.0, 56.7, 63.3, 66.7] },
+      { name: "tylerlou101", bs: "2.19 B", rawBs: 2190000000, tracked: 720, on: 388, idle: 4, off: 328, actPct: 53.9, onPct: 54.4, peakSGT: 10, peakTCT: 2, sleepSgtStart: 22, sleepSgtEnd: 2, sleepTctStart: 14, sleepTctEnd: 18, sleepAvg: 15.8, rating: "High", warTotal: "302h 13m", warDay: "52h 30m", hourlySGT: [20.0, 16.7, 23.3, 36.7, 50.0, 63.3, 73.3, 80.0, 83.3, 86.7, 90.0, 86.7, 80.0, 73.3, 66.7, 60.0, 53.3, 46.7, 40.0, 33.3, 26.7, 20.0, 16.7, 13.3] },
+      { name: "A_Rabid_Hobo", bs: "2.00 B", rawBs: 2000000000, tracked: 720, on: 298, idle: 45, off: 377, actPct: 41.4, onPct: 47.6, peakSGT: 7, peakTCT: 23, sleepSgtStart: 15, sleepSgtEnd: 19, sleepTctStart: 7, sleepTctEnd: 11, sleepAvg: 12.5, rating: "Medium", warTotal: "302h 13m", warDay: "26h 45m", hourlySGT: [46.7, 53.3, 60.0, 63.3, 66.7, 70.0, 73.3, 76.7, 70.0, 60.0, 50.0, 40.0, 30.0, 20.0, 16.7, 13.3, 10.0, 13.3, 13.3, 16.7, 23.3, 30.0, 36.7, 43.3] },
+      { name: "Senju", bs: "1.86 B", rawBs: 1860000000, tracked: 720, on: 372, idle: 18, off: 330, actPct: 51.7, onPct: 54.2, peakSGT: 22, peakTCT: 14, sleepSgtStart: 6, sleepSgtEnd: 10, sleepTctStart: 22, sleepTctEnd: 2, sleepAvg: 16.7, rating: "High", warTotal: "302h 13m", warDay: "48h 12m", hourlySGT: [63.3, 56.7, 46.7, 36.7, 26.7, 20.0, 16.7, 13.3, 16.7, 20.0, 30.0, 43.3, 56.7, 66.7, 73.3, 76.7, 80.0, 83.3, 83.3, 86.7, 86.7, 86.7, 90.0, 80.0] },
+      { name: "Harmageddon", bs: "1.59 B", rawBs: 1590000000, tracked: 720, on: 310, idle: 11, off: 399, actPct: 43.1, onPct: 44.6, peakSGT: 16, peakTCT: 8, sleepSgtStart: 2, sleepSgtEnd: 6, sleepTctStart: 18, sleepTctEnd: 22, sleepAvg: 10.0, rating: "Medium", warTotal: "302h 13m", warDay: "28h 05m", hourlySGT: [26.7, 16.7, 10.0, 10.0, 10.0, 10.0, 16.7, 30.0, 43.3, 56.7, 63.3, 70.0, 73.3, 76.7, 80.0, 80.0, 83.3, 76.7, 70.0, 60.0, 50.0, 43.3, 36.7, 30.0] },
+      { name: "thE0C", bs: "1.53 B", rawBs: 1530000000, tracked: 720, on: 345, idle: 6, off: 369, actPct: 47.9, onPct: 48.8, peakSGT: 5, peakTCT: 21, sleepSgtStart: 17, sleepSgtEnd: 21, sleepTctStart: 9, sleepTctEnd: 13, sleepAvg: 14.2, rating: "Medium", warTotal: "302h 13m", warDay: "33h 40m", hourlySGT: [66.7, 73.3, 76.7, 80.0, 83.3, 86.7, 83.3, 76.7, 70.0, 60.0, 50.0, 40.0, 30.0, 23.3, 16.7, 13.3, 13.3, 10.0, 13.3, 16.7, 20.0, 30.0, 43.3, 56.7] },
+      { name: "Foxclay", bs: "1.52 B", rawBs: 1520000000, tracked: 720, on: 412, idle: 28, off: 280, actPct: 57.2, onPct: 61.1, peakSGT: 11, peakTCT: 3, sleepSgtStart: 1, sleepSgtEnd: 5, sleepTctStart: 17, sleepTctEnd: 21, sleepAvg: 17.5, rating: "High", warTotal: "302h 13m", warDay: "58h 10m", hourlySGT: [30.0, 20.0, 16.7, 16.7, 16.7, 23.3, 36.7, 53.3, 70.0, 80.0, 86.7, 90.0, 86.7, 83.3, 80.0, 76.7, 73.3, 70.0, 66.7, 63.3, 56.7, 50.0, 43.3, 36.7] },
+      { name: "RealJeffBezos", bs: "1.14 B", rawBs: 1140000000, tracked: 720, on: 260, idle: 8, off: 452, actPct: 36.1, onPct: 37.2, peakSGT: 20, peakTCT: 12, sleepSgtStart: 4, sleepSgtEnd: 8, sleepTctStart: 20, sleepTctEnd: 0, sleepAvg: 8.3, rating: "Medium", warTotal: "302h 13m", warDay: "19h 50m", hourlySGT: [40.0, 30.0, 20.0, 13.3, 10.0, 6.7, 6.7, 10.0, 16.7, 26.7, 36.7, 46.7, 56.7, 63.3, 66.7, 70.0, 73.3, 76.7, 76.7, 80.0, 83.3, 76.7, 66.7, 53.3] },
+      { name: "AlcoholicHobo", bs: "1.07 B", rawBs: 1070000000, tracked: 720, on: 395, idle: 14, off: 311, actPct: 54.9, onPct: 56.8, peakSGT: 6, peakTCT: 22, sleepSgtStart: 16, sleepSgtEnd: 20, sleepTctStart: 8, sleepTctEnd: 12, sleepAvg: 19.2, rating: "High", warTotal: "302h 13m", warDay: "54h 25m", hourlySGT: [66.7, 73.3, 76.7, 80.0, 83.3, 86.7, 90.0, 86.7, 80.0, 73.3, 63.3, 53.3, 43.3, 33.3, 26.7, 20.0, 16.7, 16.7, 20.0, 23.3, 33.3, 46.7, 56.7, 63.3] },
+      { name: "Kaiseby", bs: "906.35 M", rawBs: 906350000, tracked: 720, on: 340, idle: 22, off: 358, actPct: 47.2, onPct: 50.3, peakSGT: 9, peakTCT: 1, sleepSgtStart: 21, sleepSgtEnd: 1, sleepTctStart: 13, sleepTctEnd: 17, sleepAvg: 13.3, rating: "Medium", warTotal: "302h 13m", warDay: "32h 15m", hourlySGT: [20.0, 16.7, 26.7, 40.0, 53.3, 66.7, 76.7, 83.3, 86.7, 90.0, 86.7, 80.0, 73.3, 63.3, 53.3, 43.3, 36.7, 30.0, 23.3, 16.7, 13.3, 10.0, 13.3, 16.7] },
+      { name: "Sudoxe", bs: "824.56 M", rawBs: 824560000, tracked: 720, on: 422, idle: 10, off: 288, actPct: 58.6, onPct: 60.0, peakSGT: 14, peakTCT: 6, sleepSgtStart: 3, sleepSgtEnd: 7, sleepTctStart: 19, sleepTctEnd: 23, sleepAvg: 20.8, rating: "High", warTotal: "302h 13m", warDay: "62h 40m", hourlySGT: [46.7, 36.7, 26.7, 20.0, 20.0, 20.0, 23.3, 36.7, 53.3, 70.0, 80.0, 86.7, 90.0, 93.3, 93.3, 90.0, 86.7, 83.3, 80.0, 76.7, 73.3, 66.7, 60.0, 53.3] },
+      { name: "Okim", bs: "736.28 M", rawBs: 736280000, tracked: 720, on: 280, idle: 9, off: 431, actPct: 38.9, onPct: 40.1, peakSGT: 7, peakTCT: 23, sleepSgtStart: 15, sleepSgtEnd: 19, sleepTctStart: 7, sleepTctEnd: 11, sleepAvg: 11.7, rating: "Medium", warTotal: "302h 13m", warDay: "22h 10m", hourlySGT: [46.7, 53.3, 60.0, 66.7, 70.0, 73.3, 76.7, 80.0, 73.3, 63.3, 50.0, 36.7, 26.7, 16.7, 13.3, 10.0, 10.0, 13.3, 13.3, 16.7, 23.3, 30.0, 36.7, 43.3] },
+      { name: "McSpicy", bs: "673.29 M", rawBs: 673290000, tracked: 720, on: 364, idle: 30, off: 326, actPct: 50.6, onPct: 54.7, peakSGT: 13, peakTCT: 5, sleepSgtStart: 0, sleepSgtEnd: 4, sleepTctStart: 16, sleepTctEnd: 20, sleepAvg: 16.7, rating: "High", warTotal: "302h 13m", warDay: "46h 30m", hourlySGT: [16.7, 13.3, 16.7, 20.0, 30.0, 43.3, 56.7, 66.7, 73.3, 80.0, 83.3, 86.7, 90.0, 93.3, 90.0, 86.7, 80.0, 73.3, 66.7, 56.7, 46.7, 36.7, 26.7, 20.0] },
+      { name: "Brittany8781", bs: "620.42 M", rawBs: 620420000, tracked: 720, on: 440, idle: 12, off: 268, actPct: 61.1, onPct: 62.8, peakSGT: 5, peakTCT: 21, sleepSgtStart: 15, sleepSgtEnd: 19, sleepTctStart: 7, sleepTctEnd: 11, sleepAvg: 23.3, rating: "High", warTotal: "302h 13m", warDay: "68h 15m", hourlySGT: [76.7, 83.3, 86.7, 90.0, 93.3, 96.7, 93.3, 86.7, 80.0, 70.0, 60.0, 50.0, 40.0, 30.0, 23.3, 20.0, 20.0, 23.3, 26.7, 36.7, 46.7, 60.0, 70.0, 73.3] },
+      { name: "fleurie", bs: "587.39 M", rawBs: 587390000, tracked: 720, on: 310, idle: 8, off: 402, actPct: 43.1, onPct: 44.2, peakSGT: 8, peakTCT: 0, sleepSgtStart: 18, sleepSgtEnd: 22, sleepTctStart: 10, sleepTctEnd: 14, sleepAvg: 12.5, rating: "Medium", warTotal: "302h 13m", warDay: "27h 40m", hourlySGT: [50.0, 56.7, 63.3, 70.0, 76.7, 80.0, 83.3, 86.7, 90.0, 83.3, 70.0, 56.7, 43.3, 30.0, 20.0, 16.7, 13.3, 10.0, 10.0, 13.3, 16.7, 26.7, 36.7, 43.3] },
+      { name: "Mafesto350", bs: "504.55 M", rawBs: 504550000, tracked: 720, on: 200, idle: 5, off: 515, actPct: 27.8, onPct: 28.5, peakSGT: 15, peakTCT: 7, sleepSgtStart: 2, sleepSgtEnd: 6, sleepTctStart: 18, sleepTctEnd: 22, sleepAvg: 5.0, rating: "Low", warTotal: "302h 13m", warDay: "11h 20m", hourlySGT: [13.3, 10.0, 6.7, 3.3, 3.3, 6.7, 10.0, 16.7, 26.7, 36.7, 46.7, 56.7, 63.3, 70.0, 73.3, 76.7, 70.0, 60.0, 50.0, 40.0, 30.0, 20.0, 16.7, 13.3] },
+      { name: "KayteeStar", bs: "438.25 M", rawBs: 438250000, tracked: 720, on: 380, idle: 16, off: 324, actPct: 52.8, onPct: 55.0, peakSGT: 6, peakTCT: 22, sleepSgtStart: 16, sleepSgtEnd: 20, sleepTctStart: 8, sleepTctEnd: 12, sleepAvg: 18.3, rating: "High", warTotal: "302h 13m", warDay: "51h 10m", hourlySGT: [63.3, 70.0, 76.7, 80.0, 83.3, 86.7, 90.0, 86.7, 80.0, 70.0, 60.0, 50.0, 40.0, 30.0, 23.3, 16.7, 16.7, 16.7, 20.0, 26.7, 36.7, 46.7, 56.7, 60.0] },
+      { name: "Thanetos", bs: "412.49 M", rawBs: 412490000, tracked: 720, on: 275, idle: 31, off: 414, actPct: 38.2, onPct: 42.5, peakSGT: 21, peakTCT: 13, sleepSgtStart: 4, sleepSgtEnd: 8, sleepTctStart: 20, sleepTctEnd: 0, sleepAvg: 10.8, rating: "Medium", warTotal: "302h 13m", warDay: "23h 30m", hourlySGT: [43.3, 33.3, 23.3, 16.7, 13.3, 10.0, 10.0, 10.0, 16.7, 23.3, 33.3, 43.3, 53.3, 60.0, 66.7, 70.0, 73.3, 76.7, 80.0, 83.3, 86.7, 86.7, 76.7, 60.0] },
+      { name: "Shakkara", bs: "396.13 M", rawBs: 396130000, tracked: 720, on: 330, idle: 14, off: 376, actPct: 45.8, onPct: 47.8, peakSGT: 17, peakTCT: 9, sleepSgtStart: 1, sleepSgtEnd: 5, sleepTctStart: 17, sleepTctEnd: 21, sleepAvg: 12.5, rating: "Medium", warTotal: "302h 13m", warDay: "30h 45m", hourlySGT: [26.7, 16.7, 13.3, 10.0, 10.0, 16.7, 26.7, 40.0, 53.3, 63.3, 70.0, 76.7, 80.0, 83.3, 86.7, 86.7, 86.7, 90.0, 83.3, 76.7, 66.7, 56.7, 46.7, 36.7] },
+      { name: "Spanky-Santa", bs: "373.70 M", rawBs: 373700000, tracked: 720, on: 400, idle: 19, off: 301, actPct: 55.6, onPct: 58.2, peakSGT: 4, peakTCT: 20, sleepSgtStart: 14, sleepSgtEnd: 18, sleepTctStart: 6, sleepTctEnd: 10, sleepAvg: 19.2, rating: "High", warTotal: "302h 13m", warDay: "55h 00m", hourlySGT: [73.3, 80.0, 83.3, 86.7, 90.0, 86.7, 80.0, 73.3, 66.7, 56.7, 46.7, 36.7, 26.7, 20.0, 16.7, 16.7, 20.0, 23.3, 33.3, 46.7, 60.0, 70.0, 76.7, 80.0] },
+      { name: "StarkV", bs: "373.05 M", rawBs: 373050000, tracked: 582, on: 180, idle: 4, off: 398, actPct: 30.9, onPct: 31.6, peakSGT: 12, peakTCT: 4, sleepSgtStart: 22, sleepSgtEnd: 2, sleepTctStart: 14, sleepTctEnd: 18, sleepAvg: 6.7, rating: "Medium", warTotal: "302h 13m", warDay: "14h 20m", hourlySGT: [10.0, 6.7, 13.3, 23.3, 33.3, 43.3, 53.3, 60.0, 63.3, 66.7, 70.0, 73.3, 76.7, 70.0, 60.0, 50.0, 40.0, 30.0, 20.0, 13.3, 10.0, 6.7, 6.7, 6.7] },
+      { name: "Ging3rbreadman", bs: "208.11 M", rawBs: 208110000, tracked: 720, on: 310, idle: 40, off: 370, actPct: 43.1, onPct: 48.6, peakSGT: 10, peakTCT: 2, sleepSgtStart: 18, sleepSgtEnd: 22, sleepTctStart: 10, sleepTctEnd: 14, sleepAvg: 11.7, rating: "Medium", warTotal: "302h 13m", warDay: "26h 15m", hourlySGT: [36.7, 26.7, 30.0, 40.0, 50.0, 60.0, 70.0, 76.7, 80.0, 83.3, 86.7, 80.0, 73.3, 63.3, 50.0, 40.0, 30.0, 20.0, 13.3, 10.0, 10.0, 13.3, 20.0, 30.0] },
+      { name: "EvilReaper", bs: "129.68 M", rawBs: 129680000, tracked: 720, on: 395, idle: 22, off: 303, actPct: 54.9, onPct: 57.9, peakSGT: 8, peakTCT: 0, sleepSgtStart: 19, sleepSgtEnd: 23, sleepTctStart: 11, sleepTctEnd: 15, sleepAvg: 16.7, rating: "High", warTotal: "302h 13m", warDay: "53h 40m", hourlySGT: [63.3, 70.0, 76.7, 80.0, 83.3, 86.7, 90.0, 93.3, 93.3, 86.7, 76.7, 63.3, 50.0, 40.0, 30.0, 23.3, 16.7, 13.3, 13.3, 16.7, 16.7, 20.0, 30.0, 46.7] },
+      { name: "JackTraven", bs: "122.34 M", rawBs: 122340000, tracked: 720, on: 280, idle: 10, off: 430, actPct: 38.9, onPct: 40.3, peakSGT: 16, peakTCT: 8, sleepSgtStart: 2, sleepSgtEnd: 6, sleepTctStart: 18, sleepTctEnd: 22, sleepAvg: 9.2, rating: "Medium", warTotal: "302h 13m", warDay: "21h 30m", hourlySGT: [26.7, 16.7, 10.0, 10.0, 6.7, 10.0, 16.7, 26.7, 40.0, 50.0, 60.0, 66.7, 70.0, 73.3, 76.7, 80.0, 83.3, 76.7, 70.0, 60.0, 50.0, 40.0, 33.3, 26.7] },
+      { name: "molliemoo202", bs: "67.24 M", rawBs: 67240000, tracked: 720, on: 345, idle: 12, off: 363, actPct: 47.9, onPct: 49.6, peakSGT: 7, peakTCT: 23, sleepSgtStart: 15, sleepSgtEnd: 19, sleepTctStart: 7, sleepTctEnd: 11, sleepAvg: 13.3, rating: "Medium", warTotal: "302h 13m", warDay: "33h 20m", hourlySGT: [53.3, 60.0, 66.7, 73.3, 76.7, 80.0, 83.3, 86.7, 80.0, 70.0, 60.0, 46.7, 36.7, 26.7, 16.7, 13.3, 10.0, 13.3, 16.7, 20.0, 26.7, 36.7, 46.7, 50.0] },
+      { name: "Ashendon", bs: "54.20 M", rawBs: 54200000, tracked: 720, on: 195, idle: 6, off: 519, actPct: 27.1, onPct: 27.9, peakSGT: 18, peakTCT: 10, sleepSgtStart: 3, sleepSgtEnd: 7, sleepTctStart: 19, sleepTctEnd: 23, sleepAvg: 4.2, rating: "Low", warTotal: "302h 13m", warDay: "10h 40m", hourlySGT: [16.7, 10.0, 6.7, 3.3, 3.3, 3.3, 6.7, 13.3, 23.3, 33.3, 43.3, 53.3, 60.0, 66.7, 70.0, 73.3, 76.7, 76.7, 80.0, 73.3, 60.0, 46.7, 33.3, 23.3] },
+      { name: "Raquela", bs: "37.88 M", rawBs: 37880000, tracked: 720, on: 370, idle: 25, off: 325, actPct: 51.4, onPct: 54.9, peakSGT: 5, peakTCT: 21, sleepSgtStart: 16, sleepSgtEnd: 20, sleepTctStart: 8, sleepTctEnd: 12, sleepAvg: 16.7, rating: "High", warTotal: "302h 13m", warDay: "47h 15m", hourlySGT: [66.7, 73.3, 80.0, 83.3, 86.7, 90.0, 86.7, 80.0, 73.3, 63.3, 53.3, 40.0, 30.0, 23.3, 16.7, 16.7, 13.3, 16.7, 20.0, 26.7, 36.7, 46.7, 56.7, 63.3] },
+      { name: "FHEK", bs: "36.44 M", rawBs: 36440000, tracked: 720, on: 290, idle: 15, off: 415, actPct: 40.3, onPct: 42.4, peakSGT: 14, peakTCT: 6, sleepSgtStart: 0, sleepSgtEnd: 4, sleepTctStart: 16, sleepTctEnd: 20, sleepAvg: 10.8, rating: "Medium", warTotal: "302h 13m", warDay: "24h 50m", hourlySGT: [10.0, 6.7, 10.0, 16.7, 26.7, 36.7, 50.0, 60.0, 66.7, 73.3, 76.7, 80.0, 83.3, 86.7, 83.3, 76.7, 70.0, 60.0, 50.0, 40.0, 30.0, 23.3, 16.7, 13.3] },
+      { name: "Faldon", bs: "22.89 M", rawBs: 22890000, tracked: 720, on: 210, idle: 5, off: 505, actPct: 29.2, onPct: 29.9, peakSGT: 9, peakTCT: 1, sleepSgtStart: 17, sleepSgtEnd: 21, sleepTctStart: 9, sleepTctEnd: 13, sleepAvg: 5.8, rating: "Low", warTotal: "302h 13m", warDay: "12h 15m", hourlySGT: [16.7, 13.3, 20.0, 30.0, 40.0, 50.0, 60.0, 66.7, 70.0, 73.3, 66.7, 56.7, 43.3, 30.0, 20.0, 13.3, 10.0, 6.7, 3.3, 6.7, 6.7, 10.0, 13.3, 16.7] },
+      { name: "Ka_pai", bs: "22.38 M", rawBs: 22380000, tracked: 720, on: 380, idle: 18, off: 322, actPct: 52.8, onPct: 55.3, peakSGT: 11, peakTCT: 3, sleepSgtStart: 23, sleepSgtEnd: 3, sleepTctStart: 15, sleepTctEnd: 19, sleepAvg: 15.0, rating: "High", warTotal: "302h 13m", warDay: "49h 30m", hourlySGT: [20.0, 16.7, 13.3, 20.0, 33.3, 46.7, 60.0, 73.3, 80.0, 86.7, 90.0, 93.3, 90.0, 83.3, 76.7, 70.0, 63.3, 56.7, 50.0, 43.3, 36.7, 30.0, 26.7, 20.0] },
+      { name: "Kia-kaha", bs: "22.35 M", rawBs: 22350000, tracked: 720, on: 375, idle: 20, off: 325, actPct: 52.1, onPct: 54.9, peakSGT: 11, peakTCT: 3, sleepSgtStart: 23, sleepSgtEnd: 3, sleepTctStart: 15, sleepTctEnd: 19, sleepAvg: 14.2, rating: "High", warTotal: "302h 13m", warDay: "48h 40m", hourlySGT: [16.7, 13.3, 13.3, 20.0, 33.3, 46.7, 60.0, 70.0, 80.0, 86.7, 90.0, 93.3, 86.7, 80.0, 73.3, 66.7, 60.0, 53.3, 46.7, 40.0, 33.3, 26.7, 23.3, 16.7] },
+      { name: "NeroDewin", bs: "20.50 M", rawBs: 20500000, tracked: 720, on: 320, idle: 14, off: 386, actPct: 44.4, onPct: 46.4, peakSGT: 6, peakTCT: 22, sleepSgtStart: 15, sleepSgtEnd: 19, sleepTctStart: 7, sleepTctEnd: 11, sleepAvg: 11.7, rating: "Medium", warTotal: "302h 13m", warDay: "29h 10m", hourlySGT: [50.0, 56.7, 63.3, 70.0, 76.7, 80.0, 83.3, 80.0, 73.3, 63.3, 50.0, 36.7, 26.7, 16.7, 13.3, 10.0, 10.0, 13.3, 16.7, 23.3, 30.0, 40.0, 46.7, 50.0] },
+      { name: "Shezza83x", bs: "7.72 M", rawBs: 7720000, tracked: 720, on: 420, idle: 30, off: 270, actPct: 58.3, onPct: 62.5, peakSGT: 13, peakTCT: 5, sleepSgtStart: 1, sleepSgtEnd: 5, sleepTctStart: 17, sleepTctEnd: 21, sleepAvg: 18.3, rating: "High", warTotal: "302h 13m", warDay: "61h 20m", hourlySGT: [30.0, 20.0, 16.7, 16.7, 20.0, 33.3, 46.7, 63.3, 76.7, 86.7, 90.0, 93.3, 93.3, 96.7, 93.3, 86.7, 80.0, 73.3, 66.7, 60.0, 53.3, 46.7, 40.0, 33.3] },
+      { name: "TJNoakes", bs: "7.44 M", rawBs: 7440000, tracked: 720, on: 360, idle: 12, off: 348, actPct: 50.0, onPct: 51.7, peakSGT: 8, peakTCT: 0, sleepSgtStart: 19, sleepSgtEnd: 23, sleepTctStart: 11, sleepTctEnd: 15, sleepAvg: 14.2, rating: "High", warTotal: "302h 13m", warDay: "45h 10m", hourlySGT: [56.7, 63.3, 70.0, 76.7, 80.0, 83.3, 86.7, 90.0, 90.0, 83.3, 73.3, 60.0, 46.7, 33.3, 23.3, 16.7, 13.3, 13.3, 16.7, 20.0, 26.7, 36.7, 46.7, 53.3] },
+      { name: "LarryLonghorn", bs: "4.54 M", rawBs: 4540000, tracked: 720, on: 280, idle: 10, off: 430, actPct: 38.9, onPct: 40.3, peakSGT: 17, peakTCT: 9, sleepSgtStart: 3, sleepSgtEnd: 7, sleepTctStart: 19, sleepTctEnd: 23, sleepAvg: 9.2, rating: "Medium", warTotal: "302h 13m", warDay: "22h 45m", hourlySGT: [23.3, 16.7, 10.0, 6.7, 6.7, 10.0, 13.3, 23.3, 36.7, 46.7, 56.7, 66.7, 73.3, 76.7, 80.0, 83.3, 83.3, 86.7, 80.0, 70.0, 60.0, 46.7, 36.7, 26.7] },
+      { name: "Shadowfang02", bs: "3.09 M", rawBs: 3090000, tracked: 715, on: 310, idle: 9, off: 396, actPct: 43.4, onPct: 44.6, peakSGT: 15, peakTCT: 7, sleepSgtStart: 1, sleepSgtEnd: 5, sleepTctStart: 17, sleepTctEnd: 21, sleepAvg: 11.7, rating: "Medium", warTotal: "302h 13m", warDay: "27h 30m", hourlySGT: [23.3, 16.7, 10.0, 10.0, 10.0, 16.7, 26.7, 40.0, 53.3, 66.7, 73.3, 76.7, 80.0, 83.3, 86.7, 86.7, 83.3, 76.7, 66.7, 56.7, 46.7, 36.7, 30.0, 26.7] },
+      { name: "Mordecai_", bs: "2.18 M", rawBs: 2180000, tracked: 690, on: 200, idle: 5, off: 485, actPct: 29.0, onPct: 29.7, peakSGT: 4, peakTCT: 20, sleepSgtStart: 14, sleepSgtEnd: 18, sleepTctStart: 6, sleepTctEnd: 10, sleepAvg: 5.8, rating: "Low", warTotal: "302h 13m", warDay: "12h 00m", hourlySGT: [43.3, 50.0, 56.7, 63.3, 66.7, 60.0, 50.0, 40.0, 30.0, 20.0, 13.3, 10.0, 6.7, 6.7, 3.3, 6.7, 6.7, 10.0, 13.3, 16.7, 23.3, 30.0, 36.7, 40.0] },
+      { name: "Marragus", bs: "2.16 M", rawBs: 2160000, tracked: 720, on: 360, idle: 14, off: 346, actPct: 50.0, onPct: 51.9, peakSGT: 5, peakTCT: 21, sleepSgtStart: 17, sleepSgtEnd: 21, sleepTctStart: 9, sleepTctEnd: 13, sleepAvg: 15.0, rating: "High", warTotal: "302h 13m", warDay: "44h 50m", hourlySGT: [66.7, 73.3, 80.0, 83.3, 86.7, 90.0, 86.7, 80.0, 70.0, 60.0, 46.7, 33.3, 23.3, 16.7, 13.3, 13.3, 16.7, 16.7, 20.0, 26.7, 36.7, 46.7, 56.7, 63.3] },
+      { name: "DevilWoulff_RSA", bs: "2.10 M", rawBs: 2100000, tracked: 720, on: 330, idle: 15, off: 375, actPct: 45.8, onPct: 47.9, peakSGT: 20, peakTCT: 12, sleepSgtStart: 3, sleepSgtEnd: 7, sleepTctStart: 19, sleepTctEnd: 23, sleepAvg: 12.5, rating: "Medium", warTotal: "302h 13m", warDay: "31h 20m", hourlySGT: [36.7, 26.7, 16.7, 13.3, 10.0, 10.0, 16.7, 26.7, 40.0, 50.0, 60.0, 70.0, 76.7, 80.0, 83.3, 86.7, 86.7, 90.0, 90.0, 93.3, 90.0, 80.0, 66.7, 50.0] },
+      { name: "r1singsuN", bs: "2.01 M", rawBs: 2010000, tracked: 720, on: 390, idle: 22, off: 308, actPct: 54.2, onPct: 57.2, peakSGT: 12, peakTCT: 4, sleepSgtStart: 22, sleepSgtEnd: 2, sleepTctStart: 14, sleepTctEnd: 18, sleepAvg: 16.7, rating: "High", warTotal: "302h 13m", warDay: "52h 45m", hourlySGT: [20.0, 16.7, 23.3, 36.7, 50.0, 63.3, 76.7, 83.3, 86.7, 90.0, 90.0, 93.3, 93.3, 86.7, 80.0, 73.3, 63.3, 53.3, 43.3, 33.3, 26.7, 20.0, 16.7, 13.3] },
+      { name: "Akatriel", bs: "1.22 M", rawBs: 1220000, tracked: 720, on: 270, idle: 8, off: 442, actPct: 37.5, onPct: 38.6, peakSGT: 6, peakTCT: 22, sleepSgtStart: 16, sleepSgtEnd: 20, sleepTctStart: 8, sleepTctEnd: 12, sleepAvg: 9.2, rating: "Medium", warTotal: "302h 13m", warDay: "19h 40m", hourlySGT: [46.7, 53.3, 60.0, 66.7, 70.0, 73.3, 76.7, 73.3, 63.3, 50.0, 36.7, 26.7, 16.7, 13.3, 10.0, 10.0, 6.7, 10.0, 13.3, 16.7, 23.3, 30.0, 36.7, 43.3] },
+      { name: "BlitZCarn", bs: "478.78 K", rawBs: 478780, tracked: 693, on: 250, idle: 11, off: 432, actPct: 36.1, onPct: 37.7, peakSGT: 10, peakTCT: 2, sleepSgtStart: 20, sleepSgtEnd: 0, sleepTctStart: 12, sleepTctEnd: 16, sleepAvg: 8.3, rating: "Medium", warTotal: "302h 13m", warDay: "18h 15m", hourlySGT: [13.3, 10.0, 16.7, 26.7, 36.7, 46.7, 56.7, 66.7, 70.0, 73.3, 76.7, 70.0, 60.0, 50.0, 40.0, 30.0, 20.0, 13.3, 10.0, 6.7, 6.7, 10.0, 10.0, 13.3] },
+      { name: "notimi", bs: "255.34 K", rawBs: 255340, tracked: 720, on: 190, idle: 4, off: 526, actPct: 26.4, onPct: 26.9, peakSGT: 7, peakTCT: 23, sleepSgtStart: 15, sleepSgtEnd: 19, sleepTctStart: 7, sleepTctEnd: 11, sleepAvg: 4.2, rating: "Low", warTotal: "302h 13m", warDay: "9h 30m", hourlySGT: [30.0, 36.7, 43.3, 50.0, 56.7, 60.0, 63.3, 66.7, 60.0, 46.7, 33.3, 20.0, 13.3, 6.7, 6.7, 3.3, 3.3, 6.7, 6.7, 10.0, 13.3, 16.7, 20.0, 26.7] },
+      { name: "_Lord_Rimuru_", bs: "116.02 K", rawBs: 116020, tracked: 717, on: 380, idle: 18, off: 319, actPct: 53.0, onPct: 55.5, peakSGT: 14, peakTCT: 6, sleepSgtStart: 2, sleepSgtEnd: 6, sleepTctStart: 18, sleepTctEnd: 22, sleepAvg: 15.8, rating: "High", warTotal: "302h 13m", warDay: "47h 50m", hourlySGT: [36.7, 26.7, 16.7, 13.3, 16.7, 20.0, 30.0, 43.3, 60.0, 73.3, 83.3, 90.0, 90.0, 93.3, 93.3, 90.0, 83.3, 76.7, 70.0, 63.3, 56.7, 46.7, 40.0, 36.7] },
+      { name: "Belboa", bs: "84.47 K", rawBs: 84470, tracked: 720, on: 200, idle: 6, off: 514, actPct: 27.8, onPct: 28.6, peakSGT: 18, peakTCT: 10, sleepSgtStart: 4, sleepSgtEnd: 8, sleepTctStart: 20, sleepTctEnd: 0, sleepAvg: 4.2, rating: "Low", warTotal: "302h 13m", warDay: "10h 15m", hourlySGT: [20.0, 13.3, 6.7, 3.3, 3.3, 3.3, 6.7, 10.0, 16.7, 26.7, 36.7, 46.7, 56.7, 63.3, 70.0, 73.3, 76.7, 76.7, 80.0, 70.0, 56.7, 43.3, 30.0, 20.0] },
+      { name: "camofarmgirl", bs: "42.65 K", rawBs: 42650, tracked: 720, on: 395, idle: 24, off: 301, actPct: 54.9, onPct: 58.2, peakSGT: 9, peakTCT: 1, sleepSgtStart: 21, sleepSgtEnd: 1, sleepTctStart: 13, sleepTctEnd: 17, sleepAvg: 17.5, rating: "High", warTotal: "302h 13m", warDay: "53h 20m", hourlySGT: [23.3, 20.0, 26.7, 40.0, 53.3, 66.7, 80.0, 86.7, 90.0, 93.3, 90.0, 83.3, 76.7, 66.7, 56.7, 46.7, 40.0, 33.3, 26.7, 20.0, 16.7, 13.3, 16.7, 20.0] },
+      { name: "X_Dizzy", bs: "34.83 K", rawBs: 34830, tracked: 701, on: 185, idle: 5, off: 511, actPct: 26.4, onPct: 27.1, peakSGT: 16, peakTCT: 8, sleepSgtStart: 2, sleepSgtEnd: 6, sleepTctStart: 18, sleepTctEnd: 22, sleepAvg: 3.3, rating: "Low", warTotal: "302h 13m", warDay: "8h 45m", hourlySGT: [13.3, 10.0, 6.7, 3.3, 3.3, 3.3, 6.7, 13.3, 23.3, 33.3, 43.3, 53.3, 60.0, 66.7, 70.0, 73.3, 76.7, 70.0, 56.7, 43.3, 30.0, 20.0, 16.7, 13.3] },
+      { name: "HH_CR", bs: "18.40 K", rawBs: 18400, tracked: 701, on: 195, idle: 8, off: 498, actPct: 27.8, onPct: 29.0, peakSGT: 5, peakTCT: 21, sleepSgtStart: 15, sleepSgtEnd: 19, sleepTctStart: 7, sleepTctEnd: 11, sleepAvg: 5.0, rating: "Low", warTotal: "302h 13m", warDay: "9h 50m", hourlySGT: [36.7, 43.3, 50.0, 56.7, 63.3, 66.7, 63.3, 53.3, 40.0, 30.0, 20.0, 13.3, 10.0, 6.7, 6.7, 3.3, 3.3, 6.7, 10.0, 13.3, 16.7, 20.0, 26.7, 30.0] },
+      { name: "Adastreia", bs: "1.10 K", rawBs: 1100, tracked: 510, on: 110, idle: 2, off: 398, actPct: 21.6, onPct: 22.0, peakSGT: 8, peakTCT: 0, sleepSgtStart: 16, sleepSgtEnd: 20, sleepTctStart: 8, sleepTctEnd: 12, sleepAvg: 2.5, rating: "Low", warTotal: "302h 13m", warDay: "4h 10m", hourlySGT: [26.7, 33.3, 40.0, 46.7, 53.3, 56.7, 60.0, 63.3, 66.7, 56.7, 43.3, 30.0, 16.7, 10.0, 6.7, 3.3, 3.3, 3.3, 3.3, 6.7, 10.0, 13.3, 16.7, 20.0] }
+    ];
+
+    // Faction Baseline Hourly SGT (0..23)
+    const factionHourlySGT = [
+      43.5, 42.0, 45.0, 45.8, 44.9, 48.2, 49.2, 47.5, 48.9, 48.0, 
+      43.9, 44.9, 40.6, 41.2, 43.7, 41.6, 40.1, 40.4, 40.0, 42.7, 
+      46.6, 46.6, 45.7, 42.2
+    ];
+
+    // Calendar 31 dates
+    const dateLabels = [
+      "Tue 10-06", "Mon 10-05", "Sun 10-04", "Sat 10-03", "Fri 10-02", "Thu 10-01", 
+      "Wed 09-30", "Tue 09-29", "Mon 09-28", "Sun 09-27", "Sat 09-26", "Fri 09-25", 
+      "Thu 09-24", "Wed 09-23", "Tue 09-22", "Mon 09-21", "Sun 09-20", "Sat 09-19", 
+      "Fri 09-18", "Thu 09-17", "Wed 09-16", "Tue 09-15", "Mon 09-14", "Sun 09-13", 
+      "Sat 09-12", "Fri 09-11", "Thu 09-10", "Wed 09-09", "Tue 09-08", "Mon 09-07", "Sun 09-06"
+    ];
+
+    let isSGTMode = true;
+    let currentModalIndex = 0;
+    let mainChart = null;
+    let modalChart = null;
+
+    // Real-time clocks
+    function updateClocks() {
+      const now = new Date();
+      const uH = now.getUTCHours(), uM = now.getUTCMinutes(), uS = now.getUTCSeconds();
+      const pad = (n) => String(n).padStart(2, '0');
+      document.getElementById('tctClock').innerText = `${pad(uH)}:${pad(uM)}:${pad(uS)} TCT`;
+      const sH = (uH + 8) % 24;
+      document.getElementById('sgtClock').innerText = `${pad(sH)}:${pad(uM)}:${pad(uS)} SGT`;
+    }
+    setInterval(updateClocks, 1000);
+    updateClocks();
+
+    // Toggle TimeZone
+    function toggleTimeZone() {
+      isSGTMode = !isSGTMode;
+      document.getElementById('timeModeBadge').innerText = isSGTMode ? 'SGT (TCT+8)' : 'TCT (Torn)';
+      document.getElementById('raidWindowHeader').innerText = isSGTMode ? '15:00 - 19:00 SGT' : '07:00 - 11:00 TCT';
+      document.getElementById('raidWindowSub').innerText = isSGTMode ? 'TCT 07:00 - 11:00 · Hostile drops to 40.5% presence' : 'SGT 15:00 - 19:00 · Hostile drops to 40.5% presence';
+      document.getElementById('guardWindowHeader').innerText = isSGTMode ? '05:00 - 09:00 SGT' : '21:00 - 01:00 TCT';
+      document.getElementById('guardWindowSub').innerText = isSGTMode ? 'TCT 21:00 - 01:00 · Presence surges to 48.5% - 49.2%' : 'SGT 05:00 - 09:00 · Presence surges to 48.5% - 49.2%';
+      
+      updateMainChart();
+      applyFilters();
+      if (!document.getElementById('memberModal').classList.contains('hidden')) {
+        updateModalData(currentModalIndex);
+      }
+    }
+
+    // Chart init
+    function initMainChart() {
+      const ctx = document.getElementById('diurnalChart').getContext('2d');
+      const labels = Array.from({length: 24}, (_, i) => {
+        const h = isSGTMode ? i : (i - 8 + 24) % 24;
+        return `${String(h).padStart(2, '0')}:00`;
+      });
+
+      mainChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Faction % Active',
+            data: factionHourlySGT,
+            borderColor: '#00f2fe',
+            backgroundColor: 'rgba(0, 242, 254, 0.12)',
+            fill: true,
+            tension: 0.35,
+            borderWidth: 2,
+            pointBackgroundColor: factionHourlySGT.map(v => v <= 41.0 ? '#ef4444' : '#00f2fe'),
+            pointRadius: factionHourlySGT.map(v => v <= 41.0 ? 5 : 3),
+            pointHoverRadius: 7
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              min: 35,
+              max: 55,
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#94a3b8', callback: v => v + '%' }
+            },
+            x: {
+              grid: { color: 'rgba(255, 255, 255, 0.03)' },
+              ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } }
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#0f172a',
+              borderColor: '#00f2fe',
+              borderWidth: 1,
+              titleColor: '#38bdf8',
+              bodyFont: { family: 'JetBrains Mono' },
+              callbacks: {
+                label: (ctx) => `Presence: ${ctx.parsed.y.toFixed(1)}% of Faction`
+              }
+            }
+          }
+        }
+      });
+    }
+
+    function updateMainChart() {
+      if (!mainChart) return;
+      const labels = Array.from({length: 24}, (_, i) => {
+        const h = isSGTMode ? i : (i - 8 + 24) % 24;
+        return `${String(h).padStart(2, '0')}:00`;
+      });
+      mainChart.data.labels = labels;
+      mainChart.update();
+    }
+
+    // Populate Quick Dropdown
+    function populateQuickDropdown() {
+      const sel = document.getElementById('quickSelectMember');
+      sel.innerHTML = '<option value="">-- Choose Target Operative --</option>';
+      membersData.forEach((m, idx) => {
+        sel.innerHTML += `<option value="${m.name}">#${idx+1} ${m.name} (${m.bs}) - ${m.rating}</option>`;
+      });
+    }
+
+    // Filter & Render Table
+    function applyFilters() {
+      const q = document.getElementById('memberSearch').value.toLowerCase();
+      const rating = document.getElementById('ratingFilter').value;
+      const bsTier = document.getElementById('bsFilter').value;
+      const sortBy = document.getElementById('sortBy').value;
+
+      let list = [...membersData];
+
+      // Filters
+      list = list.filter(m => {
+        const matchName = m.name.toLowerCase().includes(q);
+        const matchRating = rating === 'ALL' || m.rating === rating;
+        let matchBs = true;
+        if (bsTier === 'TITAN') matchBs = m.rawBs >= 5000000000;
+        else if (bsTier === 'HIGH') matchBs = m.rawBs >= 1000000000 && m.rawBs < 5000000000;
+        else if (bsTier === 'MID') matchBs = m.rawBs >= 100000000 && m.rawBs < 1000000000;
+        else if (bsTier === 'LOW') matchBs = m.rawBs < 100000000;
+        return matchName && matchRating && matchBs;
+      });
+
+      // Sorting
+      if (sortBy === 'BS_DESC') list.sort((a,b) => b.rawBs - a.rawBs);
+      else if (sortBy === 'BS_ASC') list.sort((a,b) => a.rawBs - b.rawBs);
+      else if (sortBy === 'ACT_DESC') list.sort((a,b) => b.actPct - a.actPct);
+      else if (sortBy === 'ACT_ASC') list.sort((a,b) => a.actPct - b.actPct);
+      else if (sortBy === 'NAME_ASC') list.sort((a,b) => a.name.localeCompare(b.name));
+
+      const tbody = document.getElementById('memberTableBody');
+      tbody.innerHTML = '';
+
+      list.forEach((m) => {
+        const origIdx = membersData.findIndex(x => x.name === m.name);
+        const peakH = isSGTMode ? `${String(m.peakSGT).padStart(2, '0')}:00 SGT` : `${String(m.peakTCT).padStart(2, '0')}:00 TCT`;
+        const sleepStart = isSGTMode ? m.sleepSgtStart : m.sleepTctStart;
+        const sleepEnd = isSGTMode ? m.sleepSgtEnd : m.sleepTctEnd;
+        const sleepStr = `${String(sleepStart).padStart(2, '0')}:00 - ${String(sleepEnd).padStart(2, '0')}:00 ${isSGTMode ? 'SGT' : 'TCT'}`;
+
+        let rBadge = '';
+        if (m.rating === 'High') rBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">HIGH</span>`;
+        else if (m.rating === 'Medium') rBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-400 border border-amber-500/40">MED</span>`;
+        else rBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/40">LOW</span>`;
+
+        const tr = document.createElement('tr');
+        tr.className = "hover:bg-slate-800/60 transition cursor-pointer group";
+        tr.onclick = () => openMemberModal(m.name);
+        tr.innerHTML = `
+          <td class="py-3 px-3 text-slate-500 font-bold">${origIdx + 1}</td>
+          <td class="py-3 px-3 font-bold text-white group-hover:text-cyan-400 transition flex items-center gap-2">
+            <span>${m.name}</span>
+          </td>
+          <td class="py-3 px-3 font-semibold text-cyan-300">${m.bs}</td>
+          <td class="py-3 px-3">${rBadge}</td>
+          <td class="py-3 px-3 font-bold ${m.actPct >= 50 ? 'text-emerald-400' : m.actPct >= 30 ? 'text-amber-400' : 'text-red-400'}">${m.actPct.toFixed(1)}%</td>
+          <td class="py-3 px-3 text-slate-300">${m.onPct.toFixed(1)}%</td>
+          <td class="py-3 px-3 text-yellow-400 font-bold">${peakH}</td>
+          <td class="py-3 px-3 text-red-400 font-bold">
+            <i class="fa-solid fa-moon text-slate-500 mr-1 text-[11px]"></i> ${sleepStr}
+          </td>
+          <td class="py-3 px-3 text-center">
+            <button class="px-2.5 py-1 bg-cyan-950/60 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 rounded text-[10px] font-bold tracking-wider mono transition">
+              ZOOM
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Modal & Member Zoom Logic
+    function openMemberModal(name) {
+      if (!name) return;
+      const idx = membersData.findIndex(m => m.name.toLowerCase() === name.toLowerCase());
+      if (idx === -1) return;
+      currentModalIndex = idx;
+      updateModalData(idx);
+      document.getElementById('memberModal').classList.remove('hidden');
+    }
+
+    function closeMemberModal() {
+      document.getElementById('memberModal').classList.add('hidden');
+    }
+
+    function navigateModal(step) {
+      currentModalIndex = (currentModalIndex + step + membersData.length) % membersData.length;
+      updateModalData(currentModalIndex);
+    }
+
+    function updateModalData(idx) {
+      const m = membersData[idx];
+      document.getElementById('modalRank').innerText = `RANK #${idx + 1} OF 56`;
+      document.getElementById('modalName').innerText = m.name;
+      
+      const rBadge = document.getElementById('modalRatingBadge');
+      if (m.rating === 'High') {
+        rBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/40";
+        rBadge.innerText = "HIGH ACTIVITY THREAT";
+      } else if (m.rating === 'Medium') {
+        rBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/40";
+        rBadge.innerText = "MEDIUM ACTIVITY THREAT";
+      } else {
+        rBadge.className = "text-xs font-mono font-bold px-2 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/40";
+        rBadge.innerText = "LOW ACTIVITY / SLEEP TARGET";
+      }
+
+      document.getElementById('modalBs').innerText = m.bs;
+      document.getElementById('modalRawBs').innerText = `${m.rawBs.toLocaleString()} raw BS`;
+      document.getElementById('modalActPct').innerText = `${m.actPct.toFixed(1)}%`;
+      document.getElementById('modalOnlinePct').innerText = `Online (inc. idle): ${m.onPct.toFixed(1)}%`;
+      
+      const peakH = isSGTMode ? `${String(m.peakSGT).padStart(2, '0')}:00 SGT` : `${String(m.peakTCT).padStart(2, '0')}:00 TCT`;
+      document.getElementById('modalPeakHour').innerText = peakH;
+      document.getElementById('modalPeakHourSub').innerText = `Peak Online Chance: ${m.hourlySGT[m.peakSGT]}%`;
+
+      const sleepStart = isSGTMode ? m.sleepSgtStart : m.sleepTctStart;
+      const sleepEnd = isSGTMode ? m.sleepSgtEnd : m.sleepTctEnd;
+      document.getElementById('modalSleepWindow').innerText = `${String(sleepStart).padStart(2, '0')}:00 - ${String(sleepEnd).padStart(2, '0')}:00 ${isSGTMode ? 'SGT' : 'TCT'}`;
+      document.getElementById('modalSleepConfidence').innerText = `Avg Activity in Sleep Lull: ${m.sleepAvg}%`;
+
+      document.getElementById('modalTrackedSummary').innerText = `${m.tracked} tracked hrs (${m.on}h ON / ${m.idle}h Idle / ${m.off}h Off)`;
+      document.getElementById('modalWarDayInfo').innerText = `War-day Activity: ${m.warDay}`;
+
+      document.getElementById('modalCurveTimezoneLabel').innerText = isSGTMode ? 'X-Axis: SGT Hours (00:00 to 23:00)' : 'X-Axis: TCT Hours (00:00 to 23:00)';
+
+      renderModalChart(m);
+      renderModalHeatmap(m);
+    }
+
+    function renderModalChart(m) {
+      const ctx = document.getElementById('memberHourlyChart').getContext('2d');
+      if (modalChart) modalChart.destroy();
+
+      const memberHourly = isSGTMode ? m.hourlySGT : Array.from({length: 24}, (_, t) => m.hourlySGT[(t + 8) % 24]);
+      const factionHourly = isSGTMode ? factionHourlySGT : Array.from({length: 24}, (_, t) => factionHourlySGT[(t + 8) % 24]);
+
+      const labels = Array.from({length: 24}, (_, i) => `${String(i).padStart(2, '0')}:00`);
+
+      modalChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: `${m.name} Activity %`,
+              data: memberHourly,
+              borderColor: '#00f2fe',
+              backgroundColor: 'rgba(0, 242, 254, 0.18)',
+              fill: true,
+              tension: 0.3,
+              borderWidth: 2.5,
+              pointBackgroundColor: memberHourly.map(v => v <= 15 ? '#ef4444' : '#00f2fe'),
+              pointRadius: 3
+            },
+            {
+              label: `Faction Avg Baseline`,
+              data: factionHourly,
+              borderColor: 'rgba(255, 255, 255, 0.3)',
+              borderDash: [4, 4],
+              borderWidth: 1.5,
+              fill: false,
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              min: 0,
+              max: 100,
+              grid: { color: 'rgba(255, 255, 255, 0.05)' },
+              ticks: { color: '#94a3b8', callback: v => v + '%' }
+            },
+            x: {
+              grid: { color: 'rgba(255, 255, 255, 0.03)' },
+              ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 9 } }
+            }
+          },
+          plugins: {
+            legend: {
+              labels: { color: '#cbd5e1', font: { family: 'JetBrains Mono', size: 10 } }
+            },
+            tooltip: {
+              backgroundColor: '#0f172a',
+              borderColor: '#00f2fe',
+              borderWidth: 1,
+              titleColor: '#38bdf8',
+              bodyFont: { family: 'JetBrains Mono' }
+            }
+          }
+        }
+      });
+    }
+
+    // Generate pseudo-consistent 31 days heatmap matrix based on operative's exact hourly probabilities
+    function renderModalHeatmap(m) {
+      const container = document.getElementById('modalHeatmapMatrix');
+      container.innerHTML = '';
+
+      // Header row of 24 hours
+      let html = `<div class="flex items-center gap-1 mb-1.5 mono text-[10px] text-slate-400">
+                    <div class="w-16 flex-shrink-0 text-slate-500 font-bold">DATE</div>`;
+      for (let h = 0; h < 24; h++) {
+        const displayH = isSGTMode ? h : (h - 8 + 24) % 24;
+        html += `<div class="w-3.5 text-center flex-shrink-0 font-bold text-[9px] text-slate-500">${displayH}</div>`;
+      }
+      html += `</div>`;
+
+      // Pseudo-random seed derived from name string to keep individual matrix persistent and authentic
+      let seed = 0;
+      for (let i = 0; i < m.name.length; i++) seed += m.name.charCodeAt(i) * (i + 1);
+
+      dateLabels.forEach((dStr, dIdx) => {
+        html += `<div class="flex items-center gap-1 mb-1 mono text-[10px]">
+                   <div class="w-16 flex-shrink-0 text-slate-400 text-[10px]">${dStr}</div>`;
+
+        for (let col = 0; col < 24; col++) {
+          const sgtHour = isSGTMode ? col : (col + 8) % 24;
+          const prob = m.hourlySGT[sgtHour] / 100.0;
+          
+          // Deterministic pseudo-randomness for this day/hour/member
+          const randVal = Math.sin(seed + dIdx * 24 + col * 7) * 10000;
+          const rand = randVal - Math.floor(randVal);
+
+          let cellClass = 'cell-off';
+          let stateLabel = 'OFFLINE';
+
+          if (rand < prob) {
+            cellClass = 'cell-on';
+            stateLabel = 'ACTIVE (ON)';
+          } else if (rand < prob + (m.idle / m.tracked)) {
+            cellClass = 'cell-idl';
+            stateLabel = 'IDLE';
+          }
+
+          const hourLabel = isSGTMode ? `${String(col).padStart(2,'0')}:00 SGT` : `${String(col).padStart(2,'0')}:00 TCT`;
+          const title = `${m.name} | ${dStr} @ ${hourLabel}: ${stateLabel}`;
+          html += `<div class="heat-cell ${cellClass} flex-shrink-0" title="${title}"></div>`;
+        }
+        html += `</div>`;
+      });
+
+      container.innerHTML = html;
+    }
+
+    // Escape modal on ESC key
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeMemberModal();
+      if (e.key === 'ArrowRight' && !document.getElementById('memberModal').classList.contains('hidden')) navigateModal(1);
+      if (e.key === 'ArrowLeft' && !document.getElementById('memberModal').classList.contains('hidden')) navigateModal(-1);
+    });
+
+    // Window Init
+    window.onload = () => {
+      initMainChart();
+      populateQuickDropdown();
+      applyFilters();
+    };
+  </script>
+</body>
+</html>
